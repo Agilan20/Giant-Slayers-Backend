@@ -2,34 +2,56 @@ import traci
 import time
 import threading
 from queue import Queue
-from datetime import datetime
+from datetime import datetime, timedelta
+from django.core.cache import cache
+import asyncio 
 
 class Car():
     def __init__(self, id , speed=0, turn_angle=0) -> None:
         self.id = id 
         self.frequency = dict({
-            "speed" : {"frequency":5 , "function":traci.vehicle.getSpeed } ,
-            "turn_angle" : {"frequency":10 , "function":traci.vehicle.getAngle }
+            "speed" : {"frequency":5 ,"last_log_time": datetime.now() , "function":traci.vehicle.getSpeed } ,
+            "turn_angle" : {"frequency":10 , "last_log_time" : datetime.now(),  "function":traci.vehicle.getAngle }
         })
         self.start_time = datetime.now()
+        self.location_publish_mode = False 
+
+    def set_publish_location_mode(self,mode="OFF"):
+        if(mode=="OFF"):
+            self.location_publish_mode = False 
+        else :
+            self.location_publish_mode = True 
+            print("Starting location updates")
+            asyncio.create_task(self.start_publishing_location())
 
     def update_frequency(self, parameter, new_frequency):
-        pass
+        print("Updating Frequency of",parameter,"to",new_frequency)
+        self.frequency[parameter]["frequency"] = int(new_frequency) 
+        self.frequency[parameter]["last_log_time"] = datetime.now() 
 
     def log_data(self):
         while True :
             # current_time = datetime.now()
             # elapsed_time = current_time - self.start_time
             for i in self.frequency.keys():
-                print("Logging data every 5 seconds")
-                print(i , self.frequency[i]["function"](self.id))
-            time.sleep(5)
+                current_time = datetime.now()
+                last_log_time = self.frequency[i]["last_log_time"]
+                delta = current_time - last_log_time 
+                if(delta.seconds >=  self.frequency[i]["frequency"]):
+                    print(self.id, i , self.frequency[i]["function"](self.id))
+                    cache.set(self.id+"_"+i ,self.frequency[i]["function"](self.id) , self.frequency[i]["frequency"]+20)
+
+                    self.frequency[i]["last_log_time"] = current_time
+
+            time.sleep(1)
             
 
     def start_publishing_location(self):
-        vehicle_position = traci.vehicle.getPosition("veh0")
-        latitude, longitude = traci.simulation.convertGeo(*vehicle_position)
-        print(latitude,longitude)
+        while True and self.location_publish_mode : 
+            vehicle_position = traci.vehicle.getPosition("veh0")
+            latitude, longitude = traci.simulation.convertGeo(*vehicle_position)
+            cache.set("veh0_location" , (latitude,longitude))
+            time.sleep(3)
 
 
 class CarManager():
@@ -53,7 +75,9 @@ class CarManager():
         print("Delete car",item)
 
     def update_parameter(self,item):
-        print("updating parameter",item)
+        # if item["vehicle_id"] in self.cars:
+        #     if item["parameter"] in self.cars[item["vehicle_id"]]:
+        self.cars[item["vehicle_id"]].update_frequency(item["parameter"],item["frequency"])
 
     def look_for_triggers(self):
 
@@ -68,13 +92,18 @@ class CarManager():
                     self.delete_car(item)
                 
                 elif item["type"]=="update_parameter":
-                    self.update_parameter(item)
+                    self.update_parameter(item["data"])
                 
-                elif item["type"]=="subscribe_location":
-                    self.cars[item["car_id"]].start_publishing_location()
-
+                elif item["type"]=="publish_location":
+                    self.cars[item[""]].set_publish_location_mode(item["data"]["mode"])
 
 manager = CarManager()
+
+def find_edges(start_point, end_point):
+    start_edge = traci.simulation.convertRoad(start_point[0], start_point[1])
+    end_edge = traci.simulation.convertRoad(end_point[0], end_point[1])
+    route = traci.simulation.findRoute(start_edge, end_edge)
+    return route.edges
 
 def start_sumo():
     # new_route_id = "new_route"
@@ -88,8 +117,30 @@ def start_sumo():
 
     try:
         while True:
-
             traci.simulationStep()
+
+            start_lat_long = (13.0524722222 , 80.2201666667 )
+            end_lat_long = (13.0343055556,80.1598333333)
+
+            # start = traci.simulation.convertGeo(start_lat_long[0], start_lat_long[1])
+            
+            # end = traci.simulation.convertGeo(end_lat_long[0], end_lat_long[1])
+
+            start_lane_id = traci.simulation.convertRoad(start_lat_long[0],start_lat_long[1])
+
+            startlane_id_str = start_lane_id[0]+'_0'
+
+            end_lane_id = traci.simulation.convertRoad(end_lat_long[0],end_lat_long[1])
+
+            endlane_id_str = end_lane_id[0]+'_0'
+
+            if startlane_id_str in traci.lane.getIDList() and endlane_id_str in traci.lane.getIDList():
+                start_edge_id = traci.lane.getEdgeID(startlane_id_str)
+                end_edge_id = traci.lane.getEdgeID(endlane_id_str)
+        
+            #     routes = traci.simulation.findRoute(start_edge_id, end_edge_id)
+            # # Print the route
+            #     print("Found route:", routes.edges)
 
             time.sleep(3)
 
