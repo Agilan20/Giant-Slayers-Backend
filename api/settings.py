@@ -96,8 +96,13 @@ ASGI_APPLICATION = 'api.asgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'djongo',
+        'NAME': 'khacks',
+        'ENFORCE_SCHEMA': True,
+        'CLIENT': {
+            'host': '',
+            'port': 27017,
+        }
     }
 }
 

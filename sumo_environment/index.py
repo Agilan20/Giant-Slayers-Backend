@@ -10,11 +10,12 @@ class Car():
     def __init__(self, id , speed=0, turn_angle=0) -> None:
         self.id = id 
         self.frequency = dict({
-            "speed" : {"frequency":5 ,"last_log_time": datetime.now() , "function":traci.vehicle.getSpeed } ,
-            "turn_angle" : {"frequency":10 , "last_log_time" : datetime.now(),  "function":traci.vehicle.getAngle }
+            "speed" : {"frequency":10 ,"last_log_time": datetime.now() , "function":traci.vehicle.getSpeed } ,
+            "turn_angle" : {"frequency":10 , "last_log_time" : datetime.now(),  "function":traci.vehicle.getAngle },
         })
         self.start_time = datetime.now()
         self.location_publish_mode = False 
+        #create car 
 
     def set_publish_location_mode(self,mode="OFF"):
         if(mode=="OFF"):
@@ -39,8 +40,9 @@ class Car():
                 delta = current_time - last_log_time 
                 if(delta.seconds >=  self.frequency[i]["frequency"]):
                     print(self.id, i , self.frequency[i]["function"](self.id))
-                    cache.set(self.id+"_"+i ,self.frequency[i]["function"](self.id) , self.frequency[i]["frequency"]+20)
-
+                    # cache.set(self.id+"_"+i ,self.frequency[i]["function"](self.id) , self.frequency[i]["frequency"]+20)
+                    #write to mongodb 
+                    
                     self.frequency[i]["last_log_time"] = current_time
 
             time.sleep(1)
@@ -48,9 +50,9 @@ class Car():
 
     def start_publishing_location(self):
         while True and self.location_publish_mode : 
-            vehicle_position = traci.vehicle.getPosition("veh0")
+            vehicle_position = traci.vehicle.getPosition(self.id)
             latitude, longitude = traci.simulation.convertGeo(*vehicle_position)
-            cache.set("veh0_location" , (latitude,longitude))
+            cache.set(self.id+"_location" , (latitude,longitude))
             time.sleep(3)
 
 
@@ -75,8 +77,6 @@ class CarManager():
         print("Delete car",item)
 
     def update_parameter(self,item):
-        # if item["vehicle_id"] in self.cars:
-        #     if item["parameter"] in self.cars[item["vehicle_id"]]:
         self.cars[item["vehicle_id"]].update_frequency(item["parameter"],item["frequency"])
 
     def look_for_triggers(self):
@@ -99,11 +99,6 @@ class CarManager():
 
 manager = CarManager()
 
-def find_edges(start_point, end_point):
-    start_edge = traci.simulation.convertRoad(start_point[0], start_point[1])
-    end_edge = traci.simulation.convertRoad(end_point[0], end_point[1])
-    route = traci.simulation.findRoute(start_edge, end_edge)
-    return route.edges
 
 def start_sumo():
     # new_route_id = "new_route"

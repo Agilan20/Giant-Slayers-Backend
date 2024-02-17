@@ -26,7 +26,7 @@ def flatten_list(_2d_list):
     return flat_list
 
 
-sumoCmd = ["sumo-gui", "-c", "osm.sumocfg"]
+sumoCmd = ["sumo", "-c", "osm.sumocfg"]
 traci.start(sumoCmd)
 
 packVehicleData = []
@@ -99,14 +99,30 @@ while traci.simulation.getMinExpectedNumber() > 0:
 
     traci.simulationStep()
 
-    vehicles = traci.vehicle.getIDList()
+    vehicles=traci.vehicle.getIDList()
 
-    vehicle_id = vehicles[0]
+    for i in range(0, len(vehicles)):
+            gps_position = traci.vehicle.getPosition(vehicles[i])
 
-    if veh == None:
-        veh = Vehicle(vehicle_id)
-    
-    time.sleep(2)
+            # Get the lane and edge based on GPS coordinates
+            lane_id = traci.simulation.convertRoad(gps_position[0], gps_position[1])
+
+            # Check if the lane is known before trying to get the edge ID
+            
+            print(lane_id)
+            print(f"Vehicle {vehicles[i]} is on Lane {lane_id}")
+            # Now you can use lane_id_str to get the edge_id
+            edge_id = traci.lane.getEdgeID(lane_id)
+            print(f"Edge ID for Vehicle {vehicles[i]}: {edge_id}")
+            
+
+    time.sleep(5)
+
+    # edge_id_1 = traci.lane.getEdgeID(lane_id_1+"_0")
+
+    # edge_id_2 = traci.lane.getEdgeID(lane_id_2+"_0")
+
+    # print(edge_id_2,edge_id_1)
 
     # # vehicles=traci.vehicle.getIDList()
     # trafficlights=traci.trafficlight.getIDList()
