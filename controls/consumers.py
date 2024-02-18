@@ -32,7 +32,7 @@ class LocationConsumer(AsyncWebsocketConsumer):
                     x, y = traci.simulation.convertGeo(x, y)
                     print(x, y)
                     await self.send(text_data=json.dumps({"location": [x, y]}))
-                await asyncio.sleep(1)  # Adjust the sleep duration as needed
+                await asyncio.sleep(1)  
         print("hi")
         loop.run_until_complete(async_function())
         loop.close()

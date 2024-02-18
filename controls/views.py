@@ -6,6 +6,8 @@ from django.views.decorators.http import require_POST
 from django.core.cache import cache
 from sumo_environment.index import collection
 import json 
+from sumo_environment.index import manager 
+import datetime 
 
 @csrf_exempt
 @require_POST
@@ -15,6 +17,7 @@ def create_vehicle(request):
     data = dict()
     for i in temp :
         data[i] = temp[i]
+    print(data)
     manager.event_queue.put(
         {"type": "add_vehicle", "data": data})
     return JsonResponse({"message": "Successfully created"})
@@ -32,32 +35,51 @@ def update_vehicle_parameter(request):
     manager.event_queue.put({"type": "update_parameter", "data": data})
     return JsonResponse({"message": "Frequency has been updated successfully"})
 
+# @csrf_exempt
+# @require_POST
+# #get vehicle_id , start/end location tracking 
+# def publish_location(request):
+#     data = request.POST
+#     manager.event_queue.put({"type": "publish_location", "data": {"mode":data["mode"]}})
+#     return JsonResponse({"message": "Location publishing updates changed"})
+
 @csrf_exempt
 @require_POST
-#get vehicle_id , start/end location tracking 
-def publish_location(request):
-    data = request.POST
-    manager.event_queue.put({"type": "publish_location", "data": {"mode":data["mode"]}})
-    return JsonResponse({"message": "Location publishing updates changed"})
+def get_data(request):
+    data = request.POST 
+    vehicle_id = data.get("vehicle_id")
+    parameter = data.get("parameter")
+    print(vehicle_id,parameter)
+    query = {"vehicle_id": vehicle_id ,"parameter" :parameter}
+    print(query)
+    data = list(collection.find(query).sort("time",1).limit(20))
+
+    for item in data:
+        item["_id"] = str(item["_id"])
+        item["time"] = item["time"].strftime("%Y-%m-%d %H:%M:%S")
+
+    return JsonResponse({"message":"Done","data":data})
 
 @csrf_exempt
 @require_POST
 def get_vehicle_parameter(request):
     data = request.POST
-    parameter = data.get("parameter")
     vehicle_id = data.get("vehicle_id")
-    print(parameter, vehicle_id)
+    print(vehicle_id)
+    data = manager.cars[vehicle_id].frequency
+    item = dict()
+    for i in data:
+        item[i] = dict()
+        item[i]["frequency"] = data[i]["frequency"]
+        item[i]["updated_at"] = data[i]["last_log_time"].strftime("%Y-%m-%d %H:%M:%S")
 
-    query = {
-        "parameter": parameter,
-        "vehicle_id": vehicle_id,
-    }
+    return JsonResponse({"message": "Fetched" , "data" : json.dumps(item)})
+
+@require_POST
+@csrf_exempt
+def lane_to_block(request):
+    manager.event_queue.put({
+         "type" : "lane_to_block"
+    })
     
-    # Correct the field name to "vehicle_id"
-    data = collection.find(query, {'_id': 0, 'time': 0})
-
-    data = list(data)
-
-    print(data)
-    
-    return JsonResponse({"message": "Fetched" , "data" : json.dumps(data)})
+    return JsonResponse({"message":"Success"})
