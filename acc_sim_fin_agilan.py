@@ -83,11 +83,14 @@ packBigData = []
 simulation_duration_limit = 5
 
 
+# lane to block
 lane_probabilities = {
     'lane1': 0.5,
     'lane2': 0.3,
     'lane3': 0.2
 }
+min_speed_req=8
+min_width_req=2
 
 
 ## params needed: probs_reasons, acc_prob, fail_prob
@@ -103,25 +106,81 @@ start_time = pytz.utc.localize(datetime.datetime.utcnow())
 break_down_veh=list()
 
 counter=0
+block_prob=0.1
 ls = []
 
 tank_capacity_ml = 60000
 fuel = [0 for i in range(10000)]
 pressure = [32 for i in range(10000)]
 
+wear_and_tear_threshold = 100000  
+
 
 while traci.simulation.getMinExpectedNumber() > 0 and counter<simulation_duration_limit:
-  
-        
+
         counter=counter+1
         current_time = getdatetime(start_time, counter)
         
-       
-        traci.simulationStep()
-
+        
         vehicles=traci.vehicle.getIDList()
         trafficlights=traci.trafficlight.getIDList()
         
+        lane_list=traci.lane.getIDList()
+        print("-------", len(lane_list), len(vehicles))
+        speed_filtered_value=[lane for lane in lane_list if traci.lane.getMaxSpeed(lane)>min_speed_req]
+        width_filtered_value=[lane for lane in speed_filtered_value if traci.lane.getWidth(lane)>min_width_req]
+        road_purpose_filter=['army','vip','emergency','truck']
+        purpose_filtered_road=[lane for lane in width_filtered_value if len(set(traci.lane.getAllowed(lane)).intersection(road_purpose_filter))!=0]
+        
+        if random.random()<=block_prob:
+          print("Proceeding to block a lane")
+          while True:
+              lane_to_block=random.choice(purpose_filtered_road)
+              if lane_to_block in traci.lane.getIDList():
+                  print("found a proper lane")
+                  break
+              else:
+                  # print("failed to find a proper lane")
+                  pass
+
+
+
+          route_id = "blocker_route_" + str(len(traci.route.getIDList()) + 1)
+          connected_edges = traci.lane.getEdgeID(lane_to_block)
+
+          traci.route.add(route_id, [connected_edges] + [connected_edges])
+
+
+          n_veh=int(random.uniform(20,30))
+          # print("Number of blocking vehicles is ",n_veh)
+  #         for i in range(n_veh):
+  #             # traci.vehicle.add("blocker" + str(len(traci.vehicle.getIDList()) + 3), routeID=route_id)
+  #             connected_edges = traci.lane.getEdgeID(lane_to_block)
+  #             j=i
+  # # Create a route with the selected lane and its connected edges
+  #             while True:
+                  
+  #                 new_veh_add="blocker_vehicle_"+str(j+random.randint(100,10000))
+  #                 if new_veh_add not in traci.vehicle.getIDList():
+  #                     traci.vehicle.add(new_veh_add, routeID=route_id)
+  #                     print("Vehicle has been added")
+  #                     break
+  #                 else:
+  #                     j=j+1
+          for i in range(n_veh):
+              j = i
+              while True:
+                  new_veh_add = "blocker_vehicle_" + str(j + random.randint(1000, 9000000))
+                  if new_veh_add not in traci.vehicle.getIDList():
+                      traci.vehicle.add(new_veh_add, routeID=route_id)
+                      print("Vehicle has been added")
+                      break
+                  else:
+                      j += 1
+
+        
+
+        traci.simulationStep()
         
 
         for i in range(0,len(vehicles)):
@@ -141,7 +200,7 @@ while traci.simulation.getMinExpectedNumber() > 0 and counter<simulation_duratio
                 gpscoord = [lon, lat]
                 spd = round(traci.vehicle.getSpeed(vehicles[i])*3.6,2)
                 
-                odomDist=traci.vehicle.getDistance(vehicles[i])
+                odomDist=traci.vehicle.getDistance(vehicles[i])+100000
                 displacement = round(traci.vehicle.getDistance(vehicles[i]),2)
                 impatience=traci.vehicle.getImpatience(vehicles[i])
                 
@@ -159,9 +218,18 @@ while traci.simulation.getMinExpectedNumber() > 0 and counter<simulation_duratio
                 final_pressure_psi = calculate_tire_pressure_rise(initial_pressure_psi, odomDist)
                 pressure[i] = final_pressure_psi
                 
+                final_pressure_psi_front_left= final_pressure_psi_front_right= final_pressure_psi_back_left= final_pressure_psi_back_right =final_pressure_psi
+                
+                if(odomDist > wear_and_tear_threshold):
+                  fuel_consumption_increase_factor = 1.5
+                else:
+                  fuel_consumption_increase_factor = 1
+                  
+                  
+                
                 #fuel consumption
                 initial_fuel_level_mg = fuel[i]
-                current_fuel_level_mg = traci.vehicle.getFuelConsumption(vehicles[i])
+                current_fuel_level_mg = traci.vehicle.getFuelConsumption(vehicles[i]) * fuel_consumption_increase_factor
                 consumed_fuel_level = initial_fuel_level_mg + current_fuel_level_mg
                 fuel[i] = consumed_fuel_level
                 fuel_consumption = 100 - (consumed_fuel_level / (tank_capacity_ml * 1000)) * 100
@@ -201,6 +269,21 @@ while traci.simulation.getMinExpectedNumber() > 0 and counter<simulation_duratio
                     traci.vehicle.setSpeed(vehicles[i],0)
                     traci.vehicle.setAcceleration(vehicles[i],0,5)
                     break_down_veh.append(vehicles[i])
+                    
+                    if(chosen_reason == "punc_front_left"):
+                      final_pressure_psi_front_left = 0
+                    elif(chosen_reason == "punc_front_right"):
+                      final_pressure_psi_front_right = 0
+                    elif(chosen_reason == "punc_rear_left"):
+                      final_pressure_psi_back_left = 0
+                    elif(chosen_reason == "punc_rear_right"):
+                      final_pressure_psi_back_right = 0
+                    elif(chosen_reason == "fuel_leak"):
+                      fuel_consumption = fuel_consumption-5
+                    rpm = 0
+                      
+                      
+                    
 
                 if vehicles[i] in break_down_veh:
                     print("Broken Down: ",vehicles[i])
@@ -236,7 +319,10 @@ while traci.simulation.getMinExpectedNumber() > 0 and counter<simulation_duratio
                            turnAngle, 
                           #  nextTLS, 
                            odomDist, 
-                           final_pressure_psi, 
+                           final_pressure_psi_front_left, 
+                           final_pressure_psi_front_right,
+                           final_pressure_psi_back_left, 
+                           final_pressure_psi_back_right, 
                            impatience,
                            "Yes" if seat_belt else "No",
                            "Yes" if ignited else "No"]
@@ -245,13 +331,13 @@ while traci.simulation.getMinExpectedNumber() > 0 and counter<simulation_duratio
                 
                 
 
-                # print("Vehicle: ", vehid, " at datetime: ", getdatetime())
-      #           print("Vehicle: ", vehid, " at datetime: ", counter)
-      #           print("ID:", vehid, " | Position: ", coord, " | GPS Position: ", gpscoord, " | Speed: ", spd, "km/h |",
-      # " EdgeID of veh: ", edge, " | LaneID of veh: ", lane, " | Distance: ", displacement, "m |",
-      # " Vehicle orientation: ", turnAngle, "deg | Upcoming traffic lights: ", nextTLS, " |",
-      # " Acceleration: ", acc, " | Odometer Distance: ", odomDist, " | Fuel Consumption: ", fuelCons, " |",
-      # " Electricity Consumption: ", eleCons, " | Imperfection: ", sigma, " | Impatience: ", impatience)
+                print("Vehicle: ", vehid, " at datetime: ", current_time)
+                print("Vehicle: ", vehid, " at datetime: ", counter)
+                print("ID:", vehid, " | Position: ", coord, " | GPS Position: ", gpscoord, " | Speed: ", spd, "km/h |",
+      " EdgeID of veh: ", edge, " | LaneID of veh: ", lane, " | Distance: ", displacement, "m |",
+      " Vehicle orientation: ", turnAngle, "deg | Upcoming traffic lights: ", nextTLS, " |",
+      " Acceleration: ", acc, " | Odometer Distance: ", odomDist, " | Fuel Consumption: ", fuelCons, " |",
+      " Electricity Consumption: ", eleCons, " | Imperfection: ", sigma, " | Impatience: ", impatience)
 
 
                 idd = traci.vehicle.getLaneID(vehicles[i])
@@ -298,7 +384,7 @@ while traci.simulation.getMinExpectedNumber() > 0 and counter<simulation_duratio
                                 #         " Next TLS switch: ", traci.trafficlight.getNextSwitch(trafficlights[k]))
 
                 #Pack Simulated Data
-                packBigDataLine = flatten_list([vehList, tlsList])
+                packBigDataLine = flatten_list([vehList])
                 packBigData.append(packBigDataLine)
 
                 NEWSPEED = 15 
@@ -324,10 +410,13 @@ columnnames = ['Date and Time',
                'Turn Angle', 
               #  'NextTLS', 
                'Odometer', 
-               'Pressure', 
+               'Pressure Front left', 
+               'Pressure Front right', 
+               'Pressure back left', 
+               'Pressure back right', 
                'Impatience',
                'Seat Belt',
-               'Ignited',
-                'tflight', 'tl_state', 'tl_phase_duration', 'tl_lanes_controlled', 'tl_program', 'tl_next_switch']
+               'Ignited']
+                # 'tflight', 'tl_state', 'tl_phase_duration', 'tl_lanes_controlled', 'tl_program', 'tl_next_switch']
 dataset = pd.DataFrame(packBigData, index=None, columns=columnnames)
 dataset.to_excel("output_acc21.xlsx", index=False)
